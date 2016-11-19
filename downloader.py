@@ -30,7 +30,7 @@ class Downloader:
 
 		self.setTotalNumFiles()
 		self.queueUp()
-		#self.launchThreads()
+		self.launchThreads()
 		self.queue.join()
 		self.mergeAllDirs()
 
@@ -121,7 +121,6 @@ class Downloader:
 
 	def queueUp(self):
 		for download_args in self.walkRootDir():
-			print download_args
 			self.queue.put((self.download,download_args))		
 
 
