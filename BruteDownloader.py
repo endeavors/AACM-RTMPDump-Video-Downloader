@@ -1,7 +1,6 @@
-from bs4 import BeautifulSoup
 from queue import Queue
 from threading import Thread
-import subprocess,os,sys,re,json,glob,shutil
+import subprocess,os,sys
 
 
 class ThreadWorker(Thread):
@@ -12,7 +11,7 @@ class ThreadWorker(Thread):
 	def run(self):
 		while self.queue.qsize() != 0:
 			download, args_list = self.queue.get() 
-			address = getRTMPAddress(args_list[0],args_list[1])
+			address = self.getRTMPAddress(args_list[0],args_list[1])
 			download(address, args_list[2])
 			self.queue.task_done()
 
@@ -21,14 +20,14 @@ class ThreadWorker(Thread):
 			rec_id, "/FCAVPresence.vidConf1_mc.av.1")
 
 class BruteDownloader:
-	def __init__(self,dir_path):
+	def __init__(self,in_filepath):
 		self.arg_list = ["rtmpdump", "-q"]
 		self.counter = 0
 		self.totalfiles = 0
 		self.queue = Queue()
-		self.numthreads = 8
+		self.numthreads = 10
 
-		self.queueUp()
+		self.queueUp(in_filepath)
 		self.launchThreads()
 		self.queue.join()
 
@@ -49,15 +48,15 @@ class BruteDownloader:
 			t_worker.daemon = True
 			t_worker.start()
 
-	def queueUp(self):
-		with open("./brute_nums.txt","r") as in_file:
+	def queueUp(self,filepath):
+		with open(filepath,"r") as in_file:
 			for line in in_file:
 				self.totalfiles += 1
 				args_list = map(lambda x: x.strip(),line.split())
 				self.queue.put((self.download,args_list))		
 
 
-
-downloader = BruteDownloader(dir_path)
+filepath = raw_input("Enter Input File: ")
+downloader = BruteDownloader(filepath.strip())
 
 
