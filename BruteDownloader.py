@@ -1,7 +1,8 @@
 from queue import Queue
 from threading import Thread
-import subprocess,os,sys
-
+from random import choice
+from string import ascii_lowercase
+import subprocess,os,sys,re,shutil
 
 class ThreadWorker(Thread):
 	def __init__(self,queue):
@@ -10,37 +11,145 @@ class ThreadWorker(Thread):
 
 	def run(self):
 		while self.queue.qsize() != 0:
-			download, args_list = self.queue.get() 
-			address = self.getRTMPAddress(args_list[0],args_list[1])
-			download(address, args_list[2])
+			download, (date,idlist) = self.queue.get()
+			#RTMP address doesn't include ID iter value
+			addr_list = map(lambda x: self.getRTMPAddress(x[0],x[1]) ,idlist)
+			download(addr_list, date)
 			self.queue.task_done()
 
-	def getRTMPAddress(self,rec_id,user):
-		return "{0}{1}/{2}{3}".format("rtmp://streams2.webconferencingonline.com/",user,
-			rec_id, "/FCAVPresence.vidConf1_mc.av.1")
+	def getRTMPAddress(self,rec_id,uname):
+		return "{0}{1}/{2}{3}".format("rtmp://streams2.webconferencingonline.com/",uname,
+			rec_id, "/FCAVPresence.vidConf1_mc.av.")
 
 class BruteDownloader:
-	def __init__(self,in_filepath):
+	def __init__(self,in_filename,out_dirname):
 		self.arg_list = ["rtmpdump", "-q"]
 		self.counter = 0
 		self.totalfiles = 0
 		self.queue = Queue()
-		self.numthreads = 10
-
-		self.queueUp(in_filepath)
+		self.numthreads = 1
+		self.queueUp(in_filename)
 		self.launchThreads()
 		self.queue.join()
+		self.mergeAllDirs(out_dirname)
 
-	def download(self,address,out_filename):
+	def download(self,address_list,out_filename):
+		tf_input_name = self.getRandomFileName()
+		tf_input_name = tf_input_name + ".txt"
+		tf_input = open(os.path.join(os.getcwd(),tf_input_name),'w')
+		failDownload = False
+
+		for address in address_list:
+			iternum = self.getValidFileNum(address)
+			print iternum
+			for iditer in xrange(1,iternum+1):
+				tmpaddress = address + str(iditer)
+				print tmpaddress
+				try:
+					tmp_filename = self.getRandomFileName()
+					tmp_filename = tmp_filename + ".flv"
+					subprocess.check_call(self.arg_list + ["-r", tmpaddress] + ["-o", tmp_filename])
+
+					print "file {0}\n".format(tmp_filename)
+					tf_input.write("file {0}\n".format(tmp_filename))
+				except subprocess.CalledProcessError,e:
+					sys.stdout.write("UNABLE TO DOWNLOAD: {0}\n".format(out_filename))
+					sys.stdout.flush()
+					failDownload = True
+
+
+		print tf_input_name
+		if not failDownload:
+			self.concatVideoFiles(out_filename, tf_input)
+			#put the file into the right directory
+			date = self.extractDate(out_filename)
+			if date:
+				self.moveFiletoDir(out_filename,date)
+				self.counter += 1
+				sys.stdout.write("Downloaded {0}  -> {1}/{2}\n".format(out_filename,self.counter,
+					self.totalfiles))
+			else:
+				sys.stdout.write("Couldn't find the right directory to place the video file!")
+			sys.stdout.flush()
+
+
+		#delete temp files
+		tf_input.seek(0)
+		for line in tf_input:
+			filename = line.split()[-1].strip()
+			os.remove(filename)
+		os.remove(tf_input_name)
+
+	#We care about accuracy over time here
+	def getValidFileNum(self,address):
+		args_list = ["rtmpdump", "--stop", "0.01", "-o", "/dev/null"]
+		iditer = 1
+		out = None
+		while True:
+			temp_addr = address + str(iditer)
+			try:
+				out = subprocess.check_output(args_list + ["-r", temp_addr],
+					stderr= subprocess.STDOUT)
+			except subprocess.CalledProcessError,e:
+				out = e.output
+			finally:
+				date_m = re.search(r"creationdate\s*(.*)",out)
+				if not date_m: break
+				else: iditer += 1
+		return iditer - 1
+
+	#ffmpeg doesn't like temp files
+	def concatVideoFiles(self,out_filename, tf_input):
 		try:
-			subprocess.check_call(self.arg_list + ["-r", address] + ["-o", out_filename])
-			self.counter += 1
-			sys.stdout.write("Downloaded {0}  -> {1}/{2}\n".format(out_filename,self.counter,
-			self.totalfiles))
-			sys.stdout.flush()
+			print os.path.basename(tf_input.name)
+			args_list = ["ffmpeg", "-f", "concat", "-i", os.path.basename(tf_input.name),
+				"-c", "copy", out_filename]
+			subprocess.check_call(args_list)
 		except subprocess.CalledProcessError,e:
-			sys.stdout.write("UNABLE TO DOWNLOAD: {0}\n".format(out_filename))
-			sys.stdout.flush()
+			print str(e)
+			sys.stdout.write("Failed to concatenate video files: {0}\n".format(out_filename))
+			sys.stdout.write("\tHere are the temp files:\n")
+			tf_input.seek(0)
+			for line in tf_input:
+				filename = line.split()[-1].strip()
+				sys.stdout.write("\t\t{0}\n".format(filename))
+				sys.stdout.flush()
+
+	def moveFiletoDir(self,out_filename,dirname):
+		#outfile must be in current working directory
+		cwd = os.getcwd()
+		curr_path = os.path.join(cwd,dirname)
+		if not os.path.exists(curr_path):
+			os.makedirs(curr_path)
+
+		shutil.move(os.path.join(cwd, out_filename), os.path.join(curr_path,
+			out_filename))
+
+	def mergeAllDirs(self,out_dir):
+		cwd = os.getcwd()
+		if not os.path.exists(os.path.join(cwd,out_dir)):
+			os.makedirs(out_dir)
+
+		for dir_name in next(os.walk(cwd))[1]:
+			if re.match(r"\d{4}",dir_name):
+				src = os.path.join(cwd,dir_name)
+				dest = os.path.join(cwd, out_dir)
+				destdir = os.path.join(dest,dir_name)
+				if os.path.exists(destdir):
+					shutil.rmtree(destdir)
+				shutil.move(src,dest)
+
+	def extractDate(self,out_filename):
+		m = re.search(r".*\-(\d{4}).flv",out_filename)
+		if m:
+			return m.group(1).strip()
+		return None
+
+	def getRandomFileName(self):
+		tmp_file = ''.join(choice(ascii_lowercase) for i in range(10))
+		while os.path.exists(os.path.join(os.getcwd(),tmp_file)):
+			tmp_file = ''.join(choice(ascii_lowercase) for i in range(10))
+		return tmp_file
 
 	def launchThreads(self):
 		for i in range(self.numthreads):
@@ -49,14 +158,23 @@ class BruteDownloader:
 			t_worker.start()
 
 	def queueUp(self,filepath):
+		dates_dict = {}
 		with open(filepath,"r") as in_file:
 			for line in in_file:
-				self.totalfiles += 1
-				args_list = map(lambda x: x.strip(),line.split())
-				self.queue.put((self.download,args_list))		
+				try:
+					args_list = map(lambda x: x.strip(),line.split())
+					ID, uname, date = args_list[0], args_list[1], args_list[-1]
+					if date in dates_dict:
+						dates_dict[date].append([ID,uname])
+					else:
+						dates_dict[date] = [[ID,uname]]
+				except:
+					pass
 
+		for kvtup in dates_dict.viewitems():
+			self.queue.put((self.download,kvtup))
+		self.totalfiles = len(dates_dict)
 
-filepath = raw_input("Enter Input File: ")
-downloader = BruteDownloader(filepath.strip())
-
-
+infilename = raw_input("Enter Input File Name: ")
+outdirname = raw_input("Enter Output Directory Name: ")
+downloader = BruteDownloader(infilename.strip(),outdirname.strip())

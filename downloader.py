@@ -113,7 +113,6 @@ class Downloader:
 				shutil.move(src,dest)
 
 	def launchThreads(self):
-		#create 10 threads
 		for i in range(self.numthreads):
 			t_worker = ThreadWorker(self.queue)
 			t_worker.daemon = True

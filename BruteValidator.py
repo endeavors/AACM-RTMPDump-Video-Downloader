@@ -1,3 +1,4 @@
+#validates which IDs are stored in the remote database
 from Queue import Queue
 import threading
 import subprocess,re,fcntl,sys
@@ -9,7 +10,7 @@ class ThreadWorker(threading.Thread):
 
 	def run(self):
 		while self.queue.qsize() != 0:
-			download, args = self.queue.get() 
+			download, args = self.queue.get()
 			download(args,self.getRTMPAddress(args[1],args[0]))
 			self.queue.task_done()
 
@@ -18,7 +19,7 @@ class ThreadWorker(threading.Thread):
 			rec_id, "/FCAVPresence.vidConf1_mc.av.1")
 
 class BruteValidator:
-	def __init__(self):
+	def __init__(self,filename=None):
 		self.queue = Queue()
 		self.arg_list = ["rtmpdump","-o", "/dev/null","--stop", "0.01","-r"]
 		self.month_map = {
@@ -35,8 +36,11 @@ class BruteValidator:
 			"Nov":11,
 			"Dec":12
 		}
-		self.numthreads = 8
-		self.outfile = open("brute_nums.txt","a+")
+		self.numthreads = 10
+		filename = "brute_nums.txt" if not filename else filename
+		if not filename.endswith(".txt"):
+			filename = filename + ".txt"
+		self.outfile = open(filename,"a+")
 		self.outfile.write("\n")
 		self.outfile.flush()
 		print "File opened"
@@ -82,8 +86,9 @@ class BruteValidator:
 			t_worker.start()
 
 	def queueUp(self):
-		for i in xrange(300000,700000):
-			for user in ["aacm4","aacm21"]:
+		for i in xrange(314259,400000):
+			for user in ["aacm20"]:
 				self.queue.put((self.download,(str(i),user)))
 
-brute = BruteValidator()
+filename = raw_input("Enter output file name: ")
+brute = BruteValidator(filename.strip())
