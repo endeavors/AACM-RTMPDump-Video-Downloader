@@ -27,7 +27,7 @@ class BruteDownloader:
 		self.counter = 0
 		self.totalfiles = 0
 		self.queue = Queue()
-		self.numthreads = 1
+		self.numthreads = 2
 		self.queueUp(in_filename)
 		self.launchThreads()
 		self.queue.join()
@@ -36,7 +36,7 @@ class BruteDownloader:
 	def download(self,address_list,out_filename):
 		tf_input_name = self.getRandomFileName()
 		tf_input_name = tf_input_name + ".txt"
-		tf_input = open(os.path.join(os.getcwd(),tf_input_name),'w')
+		tf_input = open(os.path.join(os.getcwd(),tf_input_name),'w+')
 		failDownload = False
 
 		for address in address_list:
@@ -57,10 +57,10 @@ class BruteDownloader:
 					sys.stdout.flush()
 					failDownload = True
 
-
+		tf_input.close()
 		print tf_input_name
 		if not failDownload:
-			self.concatVideoFiles(out_filename, tf_input)
+			self.concatVideoFiles(out_filename, tf_input_name)
 			#put the file into the right directory
 			date = self.extractDate(out_filename)
 			if date:
@@ -74,10 +74,10 @@ class BruteDownloader:
 
 
 		#delete temp files
-		tf_input.seek(0)
-		for line in tf_input:
-			filename = line.split()[-1].strip()
-			os.remove(filename)
+		with open(tf_input_name,'r') as tf_input:
+			for line in tf_input:
+				filename = line.split()[-1].strip()
+				os.remove(filename)
 		os.remove(tf_input_name)
 
 	#We care about accuracy over time here
@@ -99,11 +99,11 @@ class BruteDownloader:
 		return iditer - 1
 
 	#ffmpeg doesn't like temp files
-	def concatVideoFiles(self,out_filename, tf_input):
+	def concatVideoFiles(self,out_filename, tf_input_name):
+		tf_input = open(tf_input_name,'r')
 		try:
-			print os.path.basename(tf_input.name)
-			args_list = ["ffmpeg", "-f", "concat", "-i", os.path.basename(tf_input.name),
-				"-c", "copy", out_filename]
+			args_list = ["ffmpeg", "-f", "concat", "-i", tf_input_name,
+				"-c", "copy", out_filename, "-loglevel", "quiet"]
 			subprocess.check_call(args_list)
 		except subprocess.CalledProcessError,e:
 			print str(e)
@@ -114,6 +114,7 @@ class BruteDownloader:
 				filename = line.split()[-1].strip()
 				sys.stdout.write("\t\t{0}\n".format(filename))
 				sys.stdout.flush()
+		tf_input.close()
 
 	def moveFiletoDir(self,out_filename,dirname):
 		#outfile must be in current working directory
