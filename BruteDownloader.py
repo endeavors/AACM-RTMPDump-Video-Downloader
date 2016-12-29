@@ -2,7 +2,7 @@ from queue import Queue
 from threading import Thread
 from random import choice
 from string import ascii_lowercase
-import subprocess,os,sys,re,shutil
+import subprocess,os,sys,re,shutil,tempfile
 
 class ThreadWorker(Thread):
 	def __init__(self,queue):
@@ -32,33 +32,32 @@ class BruteDownloader:
 		self.launchThreads()
 		self.queue.join()
 		self.mergeAllDirs(out_dirname)
+		self.cleanup()
 
 	def download(self,address_list,out_filename):
-		tf_input_name = self.getRandomFileName()
-		tf_input_name = tf_input_name + ".txt"
-		tf_input = open(os.path.join(os.getcwd(),tf_input_name),'w+')
+		tf_input = tempfile.NamedTemporaryFile(delete=False)
+		tf_input_name = tf_input.name
 		failDownload = False
 
 		for address in address_list:
 			iternum = self.getValidFileNum(address)
-			print iternum
 			for iditer in xrange(1,iternum+1):
 				tmpaddress = address + str(iditer)
-				print tmpaddress
 				try:
-					tmp_filename = self.getRandomFileName()
-					tmp_filename = tmp_filename + ".flv"
-					subprocess.check_call(self.arg_list + ["-r", tmpaddress] + ["-o", tmp_filename])
+					vid_file = tempfile.NamedTemporaryFile(delete=False)
+					subprocess.check_call(self.arg_list + ["-r", tmpaddress] + ["-o", vid_file.name])
+					out_vid_name = vid_file.name + ".flv"
 
-					print "file {0}\n".format(tmp_filename)
-					tf_input.write("file {0}\n".format(tmp_filename))
+					tf_input.write("file {0}\n".format(out_vid_name))
+					os.rename(vid_file.name,out_vid_name)
 				except subprocess.CalledProcessError,e:
 					sys.stdout.write("UNABLE TO DOWNLOAD: {0}\n".format(out_filename))
 					sys.stdout.flush()
 					failDownload = True
+				finally:
+					vid_file.close()
 
 		tf_input.close()
-		print tf_input_name
 		if not failDownload:
 			self.concatVideoFiles(out_filename, tf_input_name)
 			#put the file into the right directory
@@ -102,11 +101,10 @@ class BruteDownloader:
 	def concatVideoFiles(self,out_filename, tf_input_name):
 		tf_input = open(tf_input_name,'r')
 		try:
-			args_list = ["ffmpeg", "-f", "concat", "-i", tf_input_name,
+			args_list = ["ffmpeg", "-f", "concat", "-safe","0","-i", tf_input_name,
 				"-c", "copy", out_filename, "-loglevel", "quiet"]
 			subprocess.check_call(args_list)
 		except subprocess.CalledProcessError,e:
-			print str(e)
 			sys.stdout.write("Failed to concatenate video files: {0}\n".format(out_filename))
 			sys.stdout.write("\tHere are the temp files:\n")
 			tf_input.seek(0)
@@ -114,7 +112,8 @@ class BruteDownloader:
 				filename = line.split()[-1].strip()
 				sys.stdout.write("\t\t{0}\n".format(filename))
 				sys.stdout.flush()
-		tf_input.close()
+		finally:
+			tf_input.close()
 
 	def moveFiletoDir(self,out_filename,dirname):
 		#outfile must be in current working directory
@@ -139,6 +138,14 @@ class BruteDownloader:
 				if os.path.exists(destdir):
 					shutil.rmtree(destdir)
 				shutil.move(src,dest)
+
+	def cleanup(self):
+		try:
+			subprocess.check_call(["pkill","-9","rtmpdump"])
+			subprocess.check_call(["pkill","-9","Python"])
+			subprocess.check_call(["pkill","-9","ffmpeg"])
+		except subprocess.CalledProcessError,e:
+			pass
 
 	def extractDate(self,out_filename):
 		m = re.search(r".*\-(\d{4}).flv",out_filename)
