@@ -23,11 +23,11 @@ class ThreadWorker(Thread):
 
 class BruteDownloader:
 	def __init__(self,in_filename,out_dirname):
-		self.arg_list = ["rtmpdump", "-q"]
+		self.arg_list = ["rtmpdump"]
 		self.counter = 0
 		self.totalfiles = 0
 		self.queue = Queue()
-		self.numthreads = 2
+		self.numthreads = 1
 		self.queueUp(in_filename)
 		self.launchThreads()
 		self.queue.join()

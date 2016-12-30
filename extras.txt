@@ -1,0 +1,5 @@
+rtmpdump hangs on:
+349588 aacm3 5-28-2012.flv
+582987 aacm3 3-09-2015.flv
+340035 aacm7 4-25-2012.flv
+587149 aacm9 4-14-2015.flv
