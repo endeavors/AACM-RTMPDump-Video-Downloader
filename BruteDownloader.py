@@ -97,7 +97,7 @@ class BruteDownloader:
 				else: iditer += 1
 		return iditer - 1
 
-	#ffmpeg doesn't like temp files
+	
 	def concatVideoFiles(self,out_filename, tf_input_name):
 		tf_input = open(tf_input_name,'r')
 		try:
